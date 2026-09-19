@@ -34,11 +34,15 @@ def send_telegram_message(text: str):
         print(f"Ошибка отправки в Telegram: {e}")
 
 def get_eth_market_data():
-    """Получение свежих данных по ETHUSDT с Binance Futures"""
+    """Получение свежих данных по ETHUSDT с Binance Futures с задержками от банов"""
     exchange = ccxt.binanceusdm()
     symbol = 'ETH/USDT'
+    
+    # Делаем паузы между запросами, чтобы API Binance не банило общий IP облачного сервера
     ticker = exchange.fetch_ticker(symbol)
+    time.sleep(1)
     funding_info = exchange.fetch_funding_rate(symbol)
+    time.sleep(1)
     oi_info = exchange.fetch_open_interest(symbol)
     
     return {
@@ -98,7 +102,7 @@ if 'scheduler_started' not in st.session_state:
 
 # --- ИНТЕРФЕЙС ПРИЛОЖЕНИЯ ---
 st.title("📈 Панель Аналитики ETHUSDT")
-st.caption("Веб-панель активна. Автоматическая рассылка в Telegram настроена (каждый час).")
+st.caption("Веб-панель активна. Защита от лимитов биржи включена. Авто-рассылка работает.")
 
 if st.button("🚀 Запустить анализ вручную", type="primary", use_container_width=True):
     with st.spinner("Запрашиваем данные с биржи и генерируем отчет..."):
@@ -108,7 +112,7 @@ if st.button("🚀 Запустить анализ вручную", type="primar
             col1, col2, col3 = st.columns(3)
             col1.metric("Цена ETH", f"${data['price']:,.2f}", f"{data['change_24h']:,.2f}%")
             col2.metric("Open Interest", f"{data['open_interest']:,.0f} ETH")
-            col3.metric("Funding Rate", f"{data['funding_rate']:.4f}%")
+            col3.metric("Funding Rate", f"{data['funding_rate']:,.4f}%")
             
             prompt = f"""
             Ты — старший крипто-аналитик. Проанализируй данные фьючерса ETHUSDT с Binance Futures:
