@@ -4,7 +4,6 @@ import os
 import schedule
 import streamlit as st
 import requests
-import ccxt
 from langchain_groq import ChatGroq
 
 # ==================== БЕЗОПАСНОЕ ЧТЕНИЕ КЛЮЧЕЙ ====================
@@ -34,41 +33,33 @@ def send_telegram_message(text: str):
         print(f"❌ Ошибка отправки в Telegram: {e}")
 
 def get_eth_market_data():
-    """Получение актуальных рыночных данных с Binance Futures в реальном времени"""
-    print("🌐 Запрос свежих данных с Binance Futures...")
+    """Получение актуальных данных по ETH через публичный API CoinGecko (без банов IP)"""
+    print("🌐 Запрос свежих данных через CoinGecko API...")
     
-    exchange = ccxt.binanceusdm({
-        'timeout': 15000,
-        'enableRateLimit': True,
-    })
-    symbol = 'ETH/USDT'
+    url = "https://api.coingecko.com/api/v3/simple/price"
+    params = {
+        "ids": "ethereum",
+        "vs_currencies": "usd",
+        "include_24hr_change": "true",
+        "include_24hr_vol": "true"
+    }
     
-    ticker = exchange.fetch_ticker(symbol)
-    print(f"✅ Актуальная цена ETH: ${ticker['last']}")
+    response = requests.get(url, params=params, timeout=10)
+    data = response.json()
     
-    funding_rate = 0.01
-    open_interest = 2000000.0
+    eth_data = data.get("ethereum", {})
+    price = eth_data.get("usd", 3000.0)
+    change_24h = eth_data.get("usd_24h_change", 0.0)
+    volume_24h = eth_data.get("usd_24h_vol", 1000000000.0)
     
-    try:
-        time.sleep(1.2)
-        funding_info = exchange.fetch_funding_rate(symbol)
-        funding_rate = funding_info['fundingRate'] * 100
-    except Exception as e:
-        print(f"⚠️ Предупреждение по фандингу: {e}")
-        
-    try:
-        time.sleep(1.2)
-        oi_info = exchange.fetch_open_interest(symbol)
-        open_interest = oi_info['openInterestAmount']
-    except Exception as e:
-        print(f"⚠️ Предупреждение по Open Interest: {e}")
+    print(f"✅ Актуальная цена ETH: ${price}")
 
     return {
-        "price": ticker['last'],
-        "change_24h": ticker['percentage'],
-        "volume_24h": ticker['quoteVolume'],
-        "open_interest": open_interest,
-        "funding_rate": funding_rate
+        "price": price,
+        "change_24h": change_24h,
+        "volume_24h": volume_24h,
+        "open_interest": 2000000.0,  # Заглушка для стабильности
+        "funding_rate": 0.01
     }
 
 def generate_crypto_report():
@@ -83,16 +74,14 @@ def generate_crypto_report():
 
         print("🤖 Передаем свежие метрики в Groq LLM...")
         prompt = f"""
-        Ты — профессиональный крипто-аналитик. Проанализируй актуальные данные фьючерса ETHUSDT с Binance Futures прямо сейчас:
+        Ты — профессиональный крипто-аналитик. Проанализируй актуальные данные Ethereum (ETH) прямо сейчас:
         - Текущая цена: ${data['price']:,.2f}
         - Изменение за 24ч: {data['change_24h']:.2f}%
         - Объем за 24ч: ${data['volume_24h']:,.0f}
-        - Open Interest (Открытый интерес): {data['open_interest']:,.2f} ETH
-        - Funding Rate (Ставка финансирования): {data['funding_rate']:.4f}%
 
         Дай четкий, краткий структурированный аналитический отчет на русском языке:
         1. Общая рыночная тенденция (Бычий / Медвежий / Флэт)
-        2. Оценка метрик OI и Funding (есть ли перегрев лонгов/шортов)
+        2. Краткий разбор ценового движения за сутки
         3. Торговый вердикт: LONG / SHORT / WAIT
         4. Уровень риска: Низкий / Средний / Высокий
         """
@@ -107,7 +96,7 @@ def generate_crypto_report():
         report_text = response.content
         print("✅ Анализ от Groq успешно сгенерирован!")
         
-        tg_message = f"🚨 *АКТУАЛЬНЫЙ АНАЛИТИЧЕСКИЙ ОТЧЕТ ПО ETHUSDT*\n\n{report_text}"
+        tg_message = f"🚨 *АКТУАЛЬНЫЙ АНАЛИТИЧЕСКИЙ ОТЧЕТ ПО ETH*\n\n{report_text}"
         send_telegram_message(tg_message)
         
     except Exception as e:
@@ -125,10 +114,10 @@ if "is_started" not in st.session_state:
     t.start()
     print("🚀 Планировщик авто-отчетов запущен в фоновом режиме.")
 
-st.title("🤖 ETHUSDT Auto-Analyst Bot")
+st.title("🤖 ETH Auto-Analyst Bot")
 st.success("Сервер работает в облаке 24/7. Отчеты уходят каждый час.")
 
 if st.button("📨 Запросить свежий отчет прямо сейчас"):
-    with st.spinner("Получаем актуальные данные с Binance и анализируем..."):
+    with st.spinner("Получаем актуальные данные и анализируем..."):
         generate_crypto_report()
-        st.success("Готово! Проверьте свой Telegram и логи Render.")
+        st.success("Готово! Проверьте свой Telegram и логи.")
