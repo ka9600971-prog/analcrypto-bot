@@ -1,5 +1,3 @@
-streamlit
 requests
 ccxt
 langchain-groq
-schedule
