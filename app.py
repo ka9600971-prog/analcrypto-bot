@@ -29,40 +29,38 @@ def send_telegram_message(text: str):
     }
     try:
         response = requests.post(url, json=payload, timeout=10)
-        print(f"📡 Ответ Telegram API: {response.status_code} - {response.text}")
+        print(f"📡 Ответ Telegram API: {response.status_code}")
     except Exception as e:
         print(f"❌ Ошибка отправки в Telegram: {e}")
 
 def get_eth_market_data():
-    """Получение свежих данных по ETHUSDT с защитой от зависаний"""
+    """Получение данных с Binance с защитой от флуда"""
     print("🌐 Подключаемся к Binance Futures...")
-    
-    # Инициализируем биржу с таймаутом, чтобы скрипт не висел вечно
     exchange = ccxt.binanceusdm({
-        'timeout': 10000,
+        'timeout': 15000,
         'enableRateLimit': True,
     })
     symbol = 'ETH/USDT'
     
     ticker = exchange.fetch_ticker(symbol)
     print(f"✅ Цена получена: {ticker['last']}")
-    time.sleep(0.5)
     
     funding_rate = 0.01
     open_interest = 2000000.0
     
     try:
+        time.sleep(1)
         funding_info = exchange.fetch_funding_rate(symbol)
         funding_rate = funding_info['fundingRate'] * 100
     except Exception as e:
-        print(f"⚠️ Не удалось взять фандинг: {e}")
+        print(f"⚠️ Фандинг пропущен: {e}")
         
     try:
-        time.sleep(0.5)
+        time.sleep(1)
         oi_info = exchange.fetch_open_interest(symbol)
         open_interest = oi_info['openInterestAmount']
     except Exception as e:
-        print(f"⚠️ Не удалось взять Open Interest: {e}")
+        print(f"⚠️ Open Interest пропущен: {e}")
 
     return {
         "price": ticker['last'],
@@ -77,8 +75,12 @@ def generate_crypto_report():
     print("🔄 Запуск генерации отчета...")
     try:
         data = get_eth_market_data()
-        print("🤖 Отправляем данные в Groq LLM...")
         
+        if not GROQ_API_KEY:
+            print("❌ Ошибка: Не задан GROQ_API_KEY")
+            return
+
+        print("🤖 Отправляем данные в Groq LLM...")
         prompt = f"""
         Ты — старший крипто-аналитик. Проанализируй данные фьючерса ETHUSDT с Binance Futures:
         - Текущая цена: ${data['price']:,.2f} (Изменение за 24ч: {data['change_24h']:.2f}%)
@@ -107,18 +109,20 @@ def generate_crypto_report():
         send_telegram_message(tg_message)
         
     except Exception as e:
-        print(f"❌ КРИТИЧЕСКАЯ ОШИБКА в generate_crypto_report: {e}")
+        print(f"❌ ОШИБКА в generate_crypto_report: {e}")
 
-def run_scheduler():
-    schedule.every(1).hours.do(generate_crypto_report)
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
-
-if 'scheduler_started' not in st.session_state:
-    st.session_state['scheduler_started'] = True
+# Глобальная защита от создания нескольких потоков при перезапуске Streamlit
+if "is_started" not in st.session_state:
+    st.session_state["is_started"] = True
+    def run_scheduler():
+        schedule.every(1).hours.do(generate_crypto_report)
+        while True:
+            schedule.run_pending()
+            time.sleep(1)
+            
     t = threading.Thread(target=run_scheduler, daemon=True)
     t.start()
+    print("🚀 Фоновый планировщик успешно инициализирован.")
 
 st.title("🤖 ETHUSDT Auto-Analyst Bot")
 st.success("Бот работает в облаке 24/7.")
@@ -126,4 +130,6 @@ st.success("Бот работает в облаке 24/7.")
 if st.button("📨 Отправить тестовый отчет прямо сейчас"):
     with st.spinner("Генерируем отчет..."):
         generate_crypto_report()
-        st.success("Завершено! Проверьте логи Render и Telegram.")
+        st.success("Готово! Проверьте Telegram и логи.")
+
+Jeśli бан от Binance временный, он спадет через несколько минут. После обновления кода на GitHub подождите 2-3 минуты, зайдите на сайт и нажмите кнопку тестового отчета — теперь запросы будут идти в одном потоке без флуда.
