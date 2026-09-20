@@ -13,7 +13,6 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 # ==================================================================
 
-# Минимальная настройка страницы, чтобы Render видел живой Web Service
 st.set_page_config(page_title="ETH Bot Status", page_icon="🤖", layout="centered")
 
 def send_telegram_message(text: str):
@@ -30,20 +29,24 @@ def send_telegram_message(text: str):
     }
     try:
         response = requests.post(url, json=payload, timeout=10)
-        if response.status_code == 200:
-            print("✅ Отчет успешно отправлен в Telegram!")
-        else:
-            print(f"❌ Ошибка Telegram API: {response.text}")
+        print(f"📡 Ответ Telegram API: {response.status_code} - {response.text}")
     except Exception as e:
         print(f"❌ Ошибка отправки в Telegram: {e}")
 
 def get_eth_market_data():
-    """Получение свежих данных по ETHUSDT с Binance Futures"""
-    exchange = ccxt.binanceusdm()
+    """Получение свежих данных по ETHUSDT с защитой от зависаний"""
+    print("🌐 Подключаемся к Binance Futures...")
+    
+    # Инициализируем биржу с таймаутом, чтобы скрипт не висел вечно
+    exchange = ccxt.binanceusdm({
+        'timeout': 10000,
+        'enableRateLimit': True,
+    })
     symbol = 'ETH/USDT'
     
     ticker = exchange.fetch_ticker(symbol)
-    time.sleep(1)
+    print(f"✅ Цена получена: {ticker['last']}")
+    time.sleep(0.5)
     
     funding_rate = 0.01
     open_interest = 2000000.0
@@ -51,15 +54,15 @@ def get_eth_market_data():
     try:
         funding_info = exchange.fetch_funding_rate(symbol)
         funding_rate = funding_info['fundingRate'] * 100
-    except:
-        pass
+    except Exception as e:
+        print(f"⚠️ Не удалось взять фандинг: {e}")
         
     try:
-        time.sleep(1)
+        time.sleep(0.5)
         oi_info = exchange.fetch_open_interest(symbol)
         open_interest = oi_info['openInterestAmount']
-    except:
-        pass
+    except Exception as e:
+        print(f"⚠️ Не удалось взять Open Interest: {e}")
 
     return {
         "price": ticker['last'],
@@ -71,9 +74,10 @@ def get_eth_market_data():
 
 def generate_crypto_report():
     """Генерация отчета через Groq и отправка в Telegram"""
-    print("🔄 Генерация фонового отчета...")
+    print("🔄 Запуск генерации отчета...")
     try:
         data = get_eth_market_data()
+        print("🤖 Отправляем данные в Groq LLM...")
         
         prompt = f"""
         Ты — старший крипто-аналитик. Проанализируй данные фьючерса ETHUSDT с Binance Futures:
@@ -97,32 +101,29 @@ def generate_crypto_report():
         
         response = llm.invoke(prompt)
         report_text = response.content
+        print("✅ Ответ от Groq получен успешно!")
         
         tg_message = f"⏰ *ЕЖАСОВОЙ АВТО-ОТЧЕТ ПО ETHUSDT*\n\n{report_text}"
         send_telegram_message(tg_message)
         
     except Exception as e:
-        print(f"❌ Ошибка в фоновой задаче: {e}")
+        print(f"❌ КРИТИЧЕСКАЯ ОШИБКА в generate_crypto_report: {e}")
 
-# Функция фонового планировщика
 def run_scheduler():
     schedule.every(1).hours.do(generate_crypto_report)
     while True:
         schedule.run_pending()
         time.sleep(1)
 
-# Запускаем фоновый поток для расписания один раз при старте
 if 'scheduler_started' not in st.session_state:
     st.session_state['scheduler_started'] = True
     t = threading.Thread(target=run_scheduler, daemon=True)
     t.start()
 
-# --- МИНИМАЛИСТИЧНЫЙ ИНТЕРФЕЙС СТАТУСА ---
 st.title("🤖 ETHUSDT Auto-Analyst Bot")
-st.success("Бот успешно запущен в облаке и работает 24/7!")
-st.write("Этот сервис работает в фоновом режиме. Каждые 60 минут он отправляет аналитический отчет по ETH в ваш Telegram-канал/чат.")
+st.success("Бот работает в облаке 24/7.")
 
 if st.button("📨 Отправить тестовый отчет прямо сейчас"):
     with st.spinner("Генерируем отчет..."):
         generate_crypto_report()
-        st.success("Тестовый отчет отправлен в Telegram!")
+        st.success("Завершено! Проверьте логи Render и Telegram.")
